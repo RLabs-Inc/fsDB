@@ -1,0 +1,53 @@
+{
+  "name": "@rlabs-inc/fsdb",
+  "version": "1.0.0",
+  "description": "Fractal State Database - A reactive in memory database with markdown files persistence made with parallel arrays and fine-grained reactivity.",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "bun build src/index.ts --outfile dist/index.mjs --target node --format esm && bun build src/index.ts --outfile dist/index.js --target node --format cjs && bun run build:types",
+    "build:types": "tsc --emitDeclarationOnly --declaration --outDir dist",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "bun run build"
+  },
+  "keywords": [
+    "database",
+    "reactive",
+    "signals",
+    "fractal",
+    "father-state",
+    "parallel-arrays",
+    "columnar",
+    "fine-grained",
+    "markdown",
+    "embeddings",
+    "vector-search"
+  ],
+  "author": "RLabs Inc.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rlabs-inc/fsdb"
+  },
+  "dependencies": {
+    "@rlabs-inc/signals": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5"
+  }
+}
