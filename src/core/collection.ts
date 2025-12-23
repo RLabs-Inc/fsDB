@@ -131,6 +131,9 @@ export interface Collection<S extends SchemaDefinition> {
   /** Manually set stale flag */
   setStale(id: string, stale: boolean): void
 
+  /** Set metadata (created, updated, stale) for a record - used by persistence layer */
+  setMetadata(id: string, created: number, updated: number, stale?: boolean): void
+
   // ===========================================================================
   // Lifecycle
   // ===========================================================================
@@ -428,6 +431,13 @@ export function createCollection<S extends SchemaDefinition>(
       while (staleArr.length <= index) staleArr.push(false)
       staleArr[index] = stale
       metadata.stale.value = staleArr
+    },
+
+    setMetadata(id: string, created: number, updated: number, stale: boolean = false): void {
+      const index = registry.getIndex(id)
+      if (index === -1) return
+
+      setMetadataAt(index, created, updated, stale)
     },
 
     // =========================================================================

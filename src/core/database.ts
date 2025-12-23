@@ -185,6 +185,7 @@ export function createPersistentCollection<S extends SchemaDefinition>(
     isStale: baseCollection.isStale.bind(baseCollection),
     getStaleIds: baseCollection.getStaleIds.bind(baseCollection),
     setStale: baseCollection.setStale.bind(baseCollection),
+    setMetadata: baseCollection.setMetadata.bind(baseCollection),
 
     clear() {
       baseCollection.clear()
@@ -201,12 +202,13 @@ export function createPersistentCollection<S extends SchemaDefinition>(
         const index = baseCollection.registry.allocate(id)
         baseCollection.columns.setRecord(index, record as any)
 
-        // Set metadata if present
-        if ('created' in record) {
-          // Access internal metadata (we'll need to expose this)
-        }
+        // Set metadata from loaded record
+        const created = (record as any).created ?? Date.now()
+        const updated = (record as any).updated ?? created
+        const stale = (record as any).stale ?? false
+        baseCollection.setMetadata(id, created, updated, stale)
 
-        // Check if stale
+        // Check if content is stale (embedding out of sync)
         if (contentColumn) {
           const content = record[contentColumn as keyof typeof record] as string
           if (content && isContentStale(id, content)) {

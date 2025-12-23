@@ -1,6 +1,6 @@
 {
   "name": "@rlabs-inc/fsdb",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Fractal State Database - A reactive in memory database with markdown files persistence made with parallel arrays and fine-grained reactivity.",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
