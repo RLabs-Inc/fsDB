@@ -15,6 +15,26 @@ import type {
 } from '../core/types'
 
 // =============================================================================
+// Runtime Detection & Hashing
+// =============================================================================
+
+const isBun = typeof Bun !== 'undefined'
+
+/** Fast content hashing - uses Bun.hash() when available, falls back to simple hash */
+function hashContent(content: string): bigint {
+  if (isBun) {
+    return BigInt(Bun.hash(content))
+  } else {
+    // Simple djb2 hash for Node.js - fast and sufficient for stale detection
+    let hash = 5381n
+    for (let i = 0; i < content.length; i++) {
+      hash = ((hash << 5n) + hash) + BigInt(content.charCodeAt(i))
+    }
+    return hash
+  }
+}
+
+// =============================================================================
 // Vector Utilities
 // =============================================================================
 
@@ -146,7 +166,7 @@ export interface EmbeddingManager {
 /**
  * Create an embedding manager for stale detection
  *
- * Uses Bun.hash() for ultra-fast content fingerprinting
+ * Uses fast content hashing for fingerprinting (Bun.hash when available)
  */
 export function createEmbeddingManager(): EmbeddingManager {
   // Map: id -> Map<column, hash>
@@ -154,7 +174,7 @@ export function createEmbeddingManager(): EmbeddingManager {
 
   return {
     setEmbedding(id: string, column: string, content: string): void {
-      const hash = BigInt(Bun.hash(content))
+      const hash = hashContent(content)
       let columnHashes = hashes.get(id)
       if (!columnHashes) {
         columnHashes = new Map()
@@ -170,7 +190,7 @@ export function createEmbeddingManager(): EmbeddingManager {
       const storedHash = columnHashes.get(column)
       if (storedHash === undefined) return false
 
-      const currentHash = BigInt(Bun.hash(currentContent))
+      const currentHash = hashContent(currentContent)
       return storedHash !== currentHash
     },
 

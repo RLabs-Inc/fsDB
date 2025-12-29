@@ -375,7 +375,8 @@ export function createDatabase(options: DatabaseOptions = {}): Database {
   } else if (options.local) {
     basePath = `${process.cwd()}/.fsdb/${name}`
   } else {
-    basePath = `${Bun.env.HOME}/.fsdb/${name}`
+    const home = typeof Bun !== 'undefined' ? Bun.env.HOME : process.env.HOME
+    basePath = `${home}/.fsdb/${name}`
   }
 
   const collections = new ReactiveMap<string, PersistentCollection<any>>()

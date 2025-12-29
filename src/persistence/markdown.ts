@@ -2,11 +2,63 @@
  * Markdown Persistence
  *
  * Parse and generate markdown files with YAML frontmatter.
- * Uses Bun file APIs for fast I/O.
+ * Uses Bun file APIs when available, falls back to Node.js fs/promises.
  */
 
 import type { SchemaDefinition, SchemaToRecord, RecordWithMeta } from '../core/types'
 import { parseColumnType } from '../core/columns'
+
+// =============================================================================
+// Runtime Detection & File I/O Helpers
+// =============================================================================
+
+/** Check if running in Bun runtime */
+const isBun = typeof Bun !== 'undefined'
+
+/** Read file contents as text */
+async function readFileText(filepath: string): Promise<string | null> {
+  if (isBun) {
+    const file = Bun.file(filepath)
+    if (!(await file.exists())) return null
+    return await file.text()
+  } else {
+    const fs = await import('fs/promises')
+    try {
+      return await fs.readFile(filepath, 'utf-8')
+    } catch {
+      return null
+    }
+  }
+}
+
+/** Write content to file */
+async function writeFile(filepath: string, content: string): Promise<boolean> {
+  if (isBun) {
+    await Bun.write(filepath, content)
+    return true
+  } else {
+    const fs = await import('fs/promises')
+    await fs.writeFile(filepath, content, 'utf-8')
+    return true
+  }
+}
+
+/** List markdown files in directory */
+function listMarkdownFiles(dirpath: string): string[] {
+  if (isBun) {
+    const glob = new Bun.Glob('*.md')
+    return Array.from(glob.scanSync({ cwd: dirpath }))
+  } else {
+    // Node.js fallback - synchronous readdir
+    const fs = require('fs')
+    try {
+      const files = fs.readdirSync(dirpath) as string[]
+      return files.filter((f: string) => f.endsWith('.md'))
+    } catch {
+      return []
+    }
+  }
+}
 
 // =============================================================================
 // Filename Utilities
@@ -210,12 +262,11 @@ export async function loadFromMarkdown<S extends SchemaDefinition>(
   contentColumn?: keyof S
 ): Promise<{ id: string; record: Partial<RecordWithMeta<S>> } | null> {
   try {
-    const file = Bun.file(filepath)
-    if (!(await file.exists())) {
+    const text = await readFileText(filepath)
+    if (text === null) {
       return null
     }
 
-    const text = await file.text()
     const { frontmatter, content } = parseMarkdown(text)
 
     const id = frontmatter.id as string
@@ -267,8 +318,7 @@ export async function saveToMarkdown<S extends SchemaDefinition>(
 ): Promise<boolean> {
   try {
     const markdown = generateMarkdown(record, schema, contentColumn)
-    await Bun.write(filepath, markdown)
-    return true
+    return await writeFile(filepath, markdown)
   } catch {
     return false
   }
@@ -285,8 +335,7 @@ export async function loadFromDirectory<S extends SchemaDefinition>(
   const results: { id: string; record: Partial<RecordWithMeta<S>> }[] = []
 
   try {
-    const glob = new Bun.Glob('*.md')
-    const files = glob.scanSync({ cwd: dirpath })
+    const files = listMarkdownFiles(dirpath)
 
     for (const filename of files) {
       const filepath = `${dirpath}/${filename}`

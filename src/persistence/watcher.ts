@@ -11,6 +11,40 @@ import type { SchemaDefinition, RecordWithMeta, FileChangeEvent } from '../core/
 import { WATCHER_DEBOUNCE_MS, SAVE_GRACE_PERIOD_MS } from '../core/constants'
 import { filenameToId, loadFromMarkdown } from './markdown'
 
+// Runtime detection
+const isBun = typeof Bun !== 'undefined'
+
+/** Check if file exists */
+async function fileExists(filepath: string): Promise<boolean> {
+  if (isBun) {
+    return await Bun.file(filepath).exists()
+  } else {
+    const fs = await import('fs/promises')
+    try {
+      await fs.access(filepath)
+      return true
+    } catch {
+      return false
+    }
+  }
+}
+
+/** List markdown files in directory */
+function listMarkdownFilesSync(dirpath: string): string[] {
+  if (isBun) {
+    const glob = new Bun.Glob('*.md')
+    return Array.from(glob.scanSync({ cwd: dirpath }))
+  } else {
+    const fs = require('fs')
+    try {
+      const files = fs.readdirSync(dirpath) as string[]
+      return files.filter((f: string) => f.endsWith('.md'))
+    } catch {
+      return []
+    }
+  }
+}
+
 export interface FileWatcher<S extends SchemaDefinition> {
   /** Start watching */
   start(): void
@@ -82,8 +116,7 @@ export function createFileWatcher<S extends SchemaDefinition>(
     }
 
     // Check if file exists
-    const file = Bun.file(filepath)
-    const exists = await file.exists()
+    const exists = await fileExists(filepath)
 
     let event: FileChangeEvent<S>
 
@@ -159,8 +192,7 @@ export function createFileWatcher<S extends SchemaDefinition>(
 
       try {
         // Scan for existing files first
-        const glob = new Bun.Glob('*.md')
-        for (const filename of glob.scanSync({ cwd: dirpath })) {
+        for (const filename of listMarkdownFilesSync(dirpath)) {
           _knownFiles.add(filename)
         }
 
