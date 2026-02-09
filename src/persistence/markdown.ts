@@ -64,15 +64,31 @@ function listMarkdownFiles(dirpath: string): string[] {
 // Filename Utilities
 // =============================================================================
 
-/** Convert an ID to a safe filename */
+/** Convert an ID to a safe filename (reversible via percent-encoding) */
 export function idToFilename(id: string): string {
-  // Replace unsafe characters with underscores
-  return id.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_') + '.md'
+  // Percent-encode any character that isn't safe for filenames.
+  // Safe chars: alphanumeric, hyphen, underscore, dot (but not leading dot).
+  // This is reversible - filenameToId can decode back to the original ID.
+  const encoded = id.replace(/[^a-zA-Z0-9\-_.]/g, (char) => {
+    const code = char.charCodeAt(0)
+    if (code > 0xff) {
+      // Multi-byte: encode as %uXXXX
+      return `%u${code.toString(16).padStart(4, '0')}`
+    }
+    return `%${code.toString(16).padStart(2, '0')}`
+  })
+  // Prevent hidden files (leading dot)
+  const safe = encoded.startsWith('.') ? `%2e${encoded.slice(1)}` : encoded
+  return safe + '.md'
 }
 
-/** Extract ID from a filename */
+/** Extract ID from a filename (decodes percent-encoding) */
 export function filenameToId(filename: string): string {
-  return filename.replace(/\.md$/, '')
+  const withoutExt = filename.replace(/\.md$/, '')
+  // Decode %uXXXX (multi-byte) and %XX (single-byte) sequences
+  return withoutExt.replace(/%u([0-9a-fA-F]{4})|%([0-9a-fA-F]{2})/g, (_, quad, pair) => {
+    return String.fromCharCode(parseInt(quad || pair, 16))
+  })
 }
 
 // =============================================================================
@@ -145,6 +161,12 @@ function parseYamlValue(value: string): unknown {
   if (value === 'true') return true
   if (value === 'false') return false
 
+  // Special number values
+  if (value === '.nan' || value === 'NaN') return NaN
+  if (value === '.inf' || value === 'Infinity') return Infinity
+  if (value === '-.inf' || value === '-Infinity') return -Infinity
+  if (value === '-0.0' || value === '-0') return -0
+
   // Number
   if (/^-?\d+$/.test(value)) {
     return parseInt(value, 10)
@@ -162,9 +184,18 @@ function parseYamlValue(value: string): unknown {
     }
   }
 
-  // Quoted string
-  if ((value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))) {
+  // Double-quoted string: use JSON.parse to properly handle escape sequences
+  // (newlines, tabs, unicode, nested quotes)
+  if (value.startsWith('"') && value.endsWith('"')) {
+    try {
+      return JSON.parse(value)
+    } catch {
+      return value.slice(1, -1)
+    }
+  }
+
+  // Single-quoted string (no escape sequences)
+  if (value.startsWith("'") && value.endsWith("'")) {
     return value.slice(1, -1)
   }
 
@@ -188,6 +219,10 @@ function toYamlValue(value: unknown): string {
   }
 
   if (typeof value === 'number') {
+    if (Number.isNaN(value)) return '.nan'
+    if (value === Infinity) return '.inf'
+    if (value === -Infinity) return '-.inf'
+    if (Object.is(value, -0)) return '-0.0'
     return String(value)
   }
 
@@ -200,13 +235,13 @@ function toYamlValue(value: unknown): string {
   }
 
   if (typeof value === 'string') {
-    // Quote if contains special chars
-    if (value.includes(':') || value.includes('#') || value.includes('\n') ||
-        value.startsWith('"') || value.startsWith("'") ||
-        value === 'true' || value === 'false' || value === 'null') {
-      return JSON.stringify(value)
-    }
-    return value
+    // Always JSON.stringify strings to prevent ambiguity:
+    // - empty string "" won't become null
+    // - "123" won't become number
+    // - "true"/"false"/"null" won't become boolean/null
+    // - newlines get properly escaped
+    // - colons, hashes, quotes all handled
+    return JSON.stringify(value)
   }
 
   return JSON.stringify(value)
@@ -291,10 +326,16 @@ export async function loadFromMarkdown<S extends SchemaDefinition>(
       } else if (key in frontmatter) {
         let value = frontmatter[key as string]
 
-        // Convert arrays to Float32Array for vector columns
+        // Coerce value to match schema type (safety net for legacy/hand-edited files)
         const parsed = parseColumnType(schema[key] as string)
         if (parsed.baseType === 'vector' && Array.isArray(value)) {
           value = new Float32Array(value as number[])
+        } else if (parsed.baseType === 'string' && typeof value !== 'string') {
+          value = value === null ? '' : String(value)
+        } else if (parsed.baseType === 'number' && typeof value !== 'number') {
+          value = Number(value) || 0
+        } else if (parsed.baseType === 'boolean' && typeof value !== 'boolean') {
+          value = value === 'true' || value === true
         }
 
         (record as Record<string, unknown>)[key as string] = value
